@@ -6,29 +6,40 @@ import {
   setLoading,
   resetInput
 } from '../redux/chatSlice';
+import { sendMessageToBackend } from '../utils/chatService';
 
 const UserInput = () => {
   const dispatch = useDispatch();
   const input = useSelector((state) => state.chat.input);
   const loading = useSelector((state) => state.chat.loading);
+  const conversationId = useSelector((state) => state.chat.activeConversationId);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const trimmedInput = input.trim();
     if (!trimmedInput) return;
 
-    // Add user's message
+    // Add user's message to Redux
     dispatch(addMessage({ sender: 'user', text: trimmedInput }));
 
-    // Show loading state and reset input
+    // Start loading and reset input
     dispatch(setLoading(true));
     dispatch(resetInput());
 
-    // Simulate bot response
-    setTimeout(() => {
-      dispatch(addMessage({ sender: 'bot', text: `Response to "${trimmedInput}"` }));
-      dispatch(setLoading(false));
-    }, 1000);
+    try {
+      // Send message to backend
+      const response = await sendMessageToBackend(trimmedInput, conversationId);
+
+      // Handle backend response
+      const botReply = response?.reply || 'Sorry, I didn’t understand that.';
+      dispatch(addMessage({ sender: 'bot', text: botReply }));
+    } catch (error) {
+      console.error('Error communicating with backend:', error);
+      dispatch(addMessage({ sender: 'bot', text: 'Something went wrong. Please try again later.' }));
+    }
+
+    // Stop loading
+    dispatch(setLoading(false));
   };
 
   return (
@@ -38,8 +49,9 @@ const UserInput = () => {
         value={input}
         onChange={(e) => dispatch(setInput(e.target.value))}
         placeholder="Type your message..."
+        disabled={loading}
       />
-      <button type="submit" disabled={loading}>
+      <button type="submit" disabled={loading || !input.trim()}>
         {loading ? 'Sending...' : 'Send'}
       </button>
     </form>
