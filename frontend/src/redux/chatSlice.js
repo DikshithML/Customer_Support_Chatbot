@@ -1,8 +1,13 @@
 // redux/chatSlice.js
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, nanoid } from '@reduxjs/toolkit';
+
+const initialConversationId = nanoid();
 
 const initialState = {
-  messages: [],
+  conversations: {
+    [initialConversationId]: [],
+  },
+  activeConversationId: initialConversationId,
   input: '',
   loading: false,
 };
@@ -21,11 +26,35 @@ const chatSlice = createSlice({
       state.loading = action.payload;
     },
     addMessage: (state, action) => {
-      state.messages.push(action.payload);
+      const id = state.activeConversationId;
+      if (!state.conversations[id]) {
+        state.conversations[id] = [];
+      }
+      state.conversations[id].push(action.payload);
+    },
+    loadConversation: (state, action) => {
+      const id = action.payload;
+      state.activeConversationId = id;
+      // Create if doesn't exist
+      if (!state.conversations[id]) {
+        state.conversations[id] = [];
+      }
+    },
+    startNewConversation: (state) => {
+      const newId = nanoid();
+      state.conversations[newId] = [];
+      state.activeConversationId = newId;
     },
   },
 });
 
-export const { setInput, resetInput, setLoading, addMessage } = chatSlice.actions;
+export const {
+  setInput,
+  resetInput,
+  setLoading,
+  addMessage,
+  loadConversation,
+  startNewConversation,
+} = chatSlice.actions;
 
 export default chatSlice.reducer;

@@ -1,24 +1,21 @@
-import React, { useState } from 'react';
-import MessageList from './MessageList';
-import UserInput from './UserInput';
+// components/ChatWindow.jsx
+import React from 'react';
+import { useSelector } from 'react-redux';
 
 const ChatWindow = () => {
-  const [messages, setMessages] = useState([]);
-
-  const handleSend = (newMessage) => {
-    setMessages(prev => [...prev, { sender: 'user', content: newMessage }]);
-
-    // Placeholder for AI response
-    setTimeout(() => {
-      setMessages(prev => [...prev, { sender: 'ai', content: `AI Response to: ${newMessage}` }]);
-    }, 500);
-  };
+  const { conversations, activeConversationId, loading } = useSelector((state) => state.chat);
+  const messages = conversations[activeConversationId] || [];
 
   return (
     <div className="chat-window">
-      <h2>Support Chat</h2>
-      <MessageList messages={messages} />
-      <UserInput onSend={handleSend} />
+      <div className="messages">
+        {messages.map((msg, index) => (
+          <div key={index} className={`message ${msg.sender}`}>
+            {msg.text}
+          </div>
+        ))}
+        {loading && <div className="message bot">Thinking...</div>}
+      </div>
     </div>
   );
 };
