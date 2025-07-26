@@ -1,13 +1,36 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-from .models import Conversation, Message, User
-from .serializers import MessageSerializer, ConversationSerializer
 from django.utils import timezone
+from django.db import connection
 
-# Dummy AI response generator
-def generate_ai_response(user_message):
-    return f"AI Response to: '{user_message}'"
+from .models import Conversation, Message, User
+from .serializers import ConversationSerializer
+from .llm import call_groq_llm  # <-- Import the Groq LLM wrapper
+
+# Build conversation history in chat format for Groq
+def build_message_history(conversation):
+    messages = []
+    for msg in conversation.messages.all():
+        messages.append({
+            "role": msg.sender,
+            "content": msg.content
+        })
+    return messages
+
+# Business logic: query your database based on user question
+def query_database(user_message):
+    """
+    You can expand this function to match order IDs, user names, SKUs, etc.
+    For now, if 'order' is mentioned, return 5 order statuses from the DB.
+    """
+    if "order" in user_message.lower():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT order_id, status FROM orders LIMIT 5")
+            rows = cursor.fetchall()
+            if rows:
+                return "\n".join([f"Order {row[0]}: {row[1]}" for row in rows])
+    return "No matching data found."
 
 @api_view(['POST'])
 def chat_view(request):
@@ -32,21 +55,39 @@ def chat_view(request):
             conversation = Conversation.objects.create(user=user, started_at=timezone.now())
 
         # Save user message
-        user_msg = Message.objects.create(
+        Message.objects.create(
             conversation=conversation,
             sender='user',
-            content=message_text,
+            content=message_text
         )
 
-        # Generate and save AI response
-        ai_reply = generate_ai_response(message_text)
-        ai_msg = Message.objects.create(
+        # Build full message history
+        history = build_message_history(conversation)
+
+        # If message is vague, ask clarifying question
+        if "order" in message_text.lower() and not any(char.isdigit() for char in message_text):
+            ai_reply = "Could you please provide your order ID so I can check the status?"
+        else:
+            # Query database for relevant context
+            db_result = query_database(message_text)
+
+            # Append DB result as a system message to LLM
+            history.append({
+                "role": "system",
+                "content": f"Relevant database information:\n{db_result}"
+            })
+
+            # Call Groq LLM to generate a helpful reply
+            ai_reply = call_groq_llm(history)
+
+        # Save AI response
+        Message.objects.create(
             conversation=conversation,
             sender='ai',
-            content=ai_reply,
+            content=ai_reply
         )
 
-        # Return updated conversation
+        # Return full updated conversation
         serialized = ConversationSerializer(conversation)
         return Response(serialized.data, status=200)
 
