@@ -6,24 +6,17 @@ from django.db import connection
 
 from .models import Conversation, Message, User
 from .serializers import ConversationSerializer
-from .llm import call_groq_llm  # <-- Import the Groq LLM wrapper
+from .llm import call_groq_llm  # Groq LLM wrapper
 
-# Build conversation history in chat format for Groq
+# Build conversation history for Groq
 def build_message_history(conversation):
-    messages = []
-    for msg in conversation.messages.all():
-        messages.append({
-            "role": msg.sender,
-            "content": msg.content
-        })
-    return messages
+    return [
+        {"role": msg.sender, "content": msg.content}
+        for msg in conversation.messages.all()
+    ]
 
-# Business logic: query your database based on user question
+# Business logic: query DB based on message content
 def query_database(user_message):
-    """
-    You can expand this function to match order IDs, user names, SKUs, etc.
-    For now, if 'order' is mentioned, return 5 order statuses from the DB.
-    """
     if "order" in user_message.lower():
         with connection.cursor() as cursor:
             cursor.execute("SELECT order_id, status FROM orders LIMIT 5")
@@ -54,7 +47,7 @@ def chat_view(request):
         else:
             conversation = Conversation.objects.create(user=user, started_at=timezone.now())
 
-        # Save user message
+        # Save user's message
         Message.objects.create(
             conversation=conversation,
             sender='user',
@@ -64,30 +57,26 @@ def chat_view(request):
         # Build full message history
         history = build_message_history(conversation)
 
-        # If message is vague, ask clarifying question
+        # Clarifying question if vague
         if "order" in message_text.lower() and not any(char.isdigit() for char in message_text):
             ai_reply = "Could you please provide your order ID so I can check the status?"
         else:
-            # Query database for relevant context
+            # Query DB and enrich history
             db_result = query_database(message_text)
-
-            # Append DB result as a system message to LLM
             history.append({
                 "role": "system",
                 "content": f"Relevant database information:\n{db_result}"
             })
-
-            # Call Groq LLM to generate a helpful reply
             ai_reply = call_groq_llm(history)
 
-        # Save AI response
+        # Save AI's reply
         Message.objects.create(
             conversation=conversation,
             sender='ai',
             content=ai_reply
         )
 
-        # Return full updated conversation
+        # Return full conversation
         serialized = ConversationSerializer(conversation)
         return Response(serialized.data, status=200)
 
